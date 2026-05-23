@@ -1,42 +1,39 @@
-# Projet de PFE
+# Projet de PFE : Apprentissage Fédéré pour la Gestion Intelligente de la Recharge des Véhicules Électriques
 
-## Apprentissage Fédéré pour la Gestion Intelligente de la Recharge des Véhicules Électriques
+# 1. Présentation du projet
 
----
+Ce projet de fin d’études a pour objectif de développer un prototype permettant d’optimiser les décisions de recharge de véhicules électriques (VE) dans un environnement multi-véhicules et congestionné.
 
-# 1. Contexte et Objectif du Projet
+Le système combine :
 
-Ce projet propose un prototype de système intelligent d’aide à la décision pour la recharge de véhicules électriques (VE), fondé sur :
+- des données de mobilité réelles ;
+- un environnement de simulation de recharge ;
+- de l’apprentissage par renforcement (Reinforcement Learning) ;
+- de l’apprentissage fédéré (Federated Learning).
 
-* des données réelles de mobilité (dataset GeoLife),
-* un modèle énergétique simulé,
-* un environnement multi-véhicules avec congestion réelle,
-* un apprentissage par renforcement,
-* un apprentissage fédéré pour traiter des données naturellement hétérogènes.
+L’objectif principal est de comparer différentes stratégies d’apprentissage afin de déterminer comment les véhicules peuvent choisir intelligemment :
 
-L’objectif principal est de comparer différentes stratégies d’apprentissage dans un environnement réaliste où plusieurs véhicules partagent un nombre limité de bornes :
-
-* Apprentissage centralisé (baseline théorique).
-* Apprentissage fédéré classique (FedAvg).
-* Apprentissage fédéré dynamique (FedDyn).
-* Heuristiques simples (règles déterministes).
-
-Le projet vise à analyser les compromis entre :
-
-* coût de recharge,
-* temps d’attente,
-* détours,
-* risque de batterie critique,
-* fréquence des demandes de recharge.
+- quand se recharger ;
+- où se recharger ;
+- tout en minimisant :
+  - le temps d’attente ;
+  - le coût ;
+  - les détours ;
+  - les situations critiques de batterie.
 
 ---
 
-# 2. Installation et Lancement
+# 2. Installation
 
-## 2.1 Prérequis
+## 2.1 Cloner le projet
 
-* Python ≥ 3.10 recommandé
-* Installation des dépendances :
+```bash
+git clone https://github.com/Iyad-78/PFE_federated_EV_charging.git
+```
+
+---
+
+## 2.2 Installer les dépendances
 
 ```bash
 pip install -r requirements.txt
@@ -44,24 +41,7 @@ pip install -r requirements.txt
 
 ---
 
-## 2.2 Organisation du projet
-
-Structure générale :
-
-```text
-PFE/
-├── data/
-│   ├── geolife_raw/        # Dataset GeoLife (non versionné)
-│   ├── processed/          # Fichiers intermédiaires (parquet)
-├── src/                    # Code source
-├── outputs/                # Résultats des expériences
-├── README.md
-└── requirements.txt
-```
-
----
-
-## 2.3 Lancer l’expérience complète
+# 3. Lancement du projet
 
 Depuis la racine du projet :
 
@@ -69,361 +49,450 @@ Depuis la racine du projet :
 python -m src.run_experiment
 ```
 
-Ce script exécute automatiquement :
+Le script lance automatiquement :
 
-1. Le parsing et le nettoyage des données GeoLife
-2. La construction des épisodes de mobilité
-3. La génération des stations de recharge
-4. L’entraînement des modèles :
+- le parsing GeoLife ;
+- le prétraitement ;
+- la génération des épisodes ;
+- l’entraînement RL ;
+- l’apprentissage fédéré ;
+- l’évaluation multi-véhicules ;
+- l’export des résultats.
 
-   * Centralisé
-   * FedAvg
-   * FedDyn
-5. L’évaluation multi-véhicules
-6. Trois exécutions indépendantes (seeds différentes)
-7. L’export des résultats (moyenne et écart-type)
+Les résultats sont ensuite sauvegardés dans le dossier :
+
+```text
+outputs/
+```
 
 ---
 
-# 3. Données de Mobilité : GeoLife
+# 4. Objectifs du projet
 
-## 3.1 Présentation du Dataset
+Le projet compare plusieurs approches :
 
-Le projet repose sur le dataset :
+- apprentissage centralisé ;
+- Federated Learning avec FedAvg ;
+- Federated Learning avec FedDyn ;
+- heuristiques simples de décision.
+
+Le système prend en compte :
+
+- la congestion des stations ;
+- les files d’attente ;
+- les contraintes énergétiques ;
+- les habitudes de mobilité des utilisateurs.
+
+---
+
+# 5. Dataset utilisé : GeoLife
+
+## 5.1 Présentation du dataset
+
+Le projet utilise le dataset :
 
 **Microsoft Research GeoLife GPS Trajectory Dataset**
 
-Il contient :
-
-* 182 utilisateurs
-* Plus de 17 000 trajectoires
-* Données GPS collectées sur plusieurs années
-* Informations : latitude, longitude, altitude, date et heure
-
-Important :
-
-* Il ne contient aucune information énergétique.
-* Il ne contient aucune information sur des bornes de recharge.
-* Il ne contient aucune information sur des véhicules électriques.
-
-Les aspects énergétiques et d’infrastructure sont simulés par-dessus les trajectoires de mobilité.
-
----
-
-## 3.2 Structure interne du dataset
-
-Organisation des fichiers :
+Lien Kaggle :
 
 ```text
-Geolife Trajectories 1.3/
-└── Data/
-    ├── 000/
-    │   └── Trajectory/
-    │       ├── 20081023025304.plt
-    │       ├── ...
-    ├── 001/
-    ├── ...
+https://www.kaggle.com/datasets/arashnic/microsoft-geolife-gps-trajectory-dataset
 ```
 
-Chaque dossier correspond à un utilisateur.
+Le dataset contient :
 
-Chaque fichier `.plt` correspond à une trajectoire continue.
+- 182 utilisateurs ;
+- plus de 17 000 trajectoires GPS ;
+- plusieurs millions de points GPS.
 
----
+Chaque point contient notamment :
 
-## 3.3 Pipeline de transformation des données
+- latitude ;
+- longitude ;
+- timestamp ;
+- altitude.
 
-Le pipeline comporte deux grandes étapes :
+Le dataset ne contient pas directement :
 
-### 1. Nettoyage et préparation (geolife_prepare.py)
+- d’informations sur les véhicules électriques ;
+- de données énergétiques ;
+- de stations de recharge.
 
-* Lecture des fichiers `.plt`
-* Nettoyage des points aberrants
-* Conversion des timestamps
-* Agrégation dans un fichier parquet
-
-Objectif : obtenir une base exploitable et structurée.
-
----
-
-### 2. Construction des épisodes (geolife_load.py)
-
-Transformation des points GPS en épisodes discrets :
-
-* Discrétisation spatiale en grille (zi, zj)
-* Ré-échantillonnage temporel (ex. : pas de 10 minutes)
-* Calcul des distances entre pas successifs
-* Construction d’épisodes par utilisateur
-
-Chaque épisode contient :
-
-| Colonne | Description                  |
-| ------- | ---------------------------- |
-| zi, zj  | Position discrète sur grille |
-| dist_km | Distance parcourue           |
-| dt      | Timestamp                    |
-
-Chaque utilisateur possède plusieurs épisodes indépendants.
+Ces éléments ont donc été simulés dans le cadre du projet.
 
 ---
 
-# 4. Architecture détaillée du code
+## 5.2 Prétraitement des données
 
-Le dossier `src/` est structuré par modules fonctionnels.
+Les données GeoLife sont transformées en plusieurs étapes.
 
----
+### Étape 1 : Parsing des fichiers `.plt`
 
-## 4.1 Orchestration principale
+Les fichiers GPS bruts sont convertis en DataFrame pandas puis sauvegardés au format Parquet.
 
-### run_experiment.py
+Fichier concerné :
 
-Rôle :
-
-* Script principal du projet.
-* Lance le pipeline complet.
-* Gère les seeds.
-* Entraîne les modèles.
-* Lance les évaluations.
-* Exporte les résultats.
-
-C’est le point d’entrée unique.
+```text
+src/geolife_prepare.py
+```
 
 ---
 
-## 4.2 Gestion des données
+### Étape 2 : Génération des épisodes
 
-### geolife_prepare.py
+Les trajectoires sont ensuite :
 
-* Parsing des fichiers `.plt`
-* Nettoyage et conversion
-* Sauvegarde au format parquet
+- discrétisées spatialement sur une grille ;
+- ré-échantillonnées temporellement ;
+- converties en épisodes exploitables par l’environnement RL.
 
-### geolife_load.py
+Fichier concerné :
 
-* Construction des épisodes
-* Discrétisation spatiale
-* Resampling temporel
-
----
-
-## 4.3 Modélisation environnementale
-
-### env_ev.py
-
-Environnement véhicule-centré.
-
-Responsabilités :
-
-* Gestion d’un épisode
-* Mise à jour du SoC
-* Calcul des récompenses
-* Interaction avec les stations
-* Construction du vecteur d’observation
-
-C’est le cœur de la simulation.
+```text
+src/geolife_load.py
+```
 
 ---
 
-### vehicles.py
+## 5.3 Colonnes principales utilisées
 
-Modèle énergétique simplifié :
-
-* Capacité batterie
-* Consommation par km
-* Mise à jour du SoC
-* Recharge selon puissance station
-
----
-
-### stations.py
-
-Modélisation des bornes :
-
-* Nombre de ports
-* File d’attente FIFO
-* Sessions de recharge
-* Estimation réaliste du temps d’attente
-
-La congestion est réellement simulée (partage entre véhicules).
+| Colonne | Description |
+|---|---|
+| `zi` | Position latitude discrétisée |
+| `zj` | Position longitude discrétisée |
+| `dist_km` | Distance parcourue |
+| `dt` | Timestamp |
+| `traj_id` | Identifiant de trajectoire |
 
 ---
 
-## 4.4 Apprentissage par renforcement
+# 6. Architecture générale du projet
 
-### models.py
+Le pipeline complet du projet est le suivant :
 
-Définit le réseau de neurones (Policy Network) :
-
-* MLP simple
-* Entrée : observation complète
-* Sortie : probabilité d’action (station ou attendre)
-
----
-
-### rl_train.py
-
-Implémentation de l’algorithme REINFORCE :
-
-* Policy gradient
-* Mise à jour des poids
-* Entraînement local
-
-Choix volontairement simple pour la lisibilité et la stabilité.
+```text
+GeoLife brut
+→ Prétraitement
+→ Génération des épisodes
+→ Simulation VE
+→ Reinforcement Learning
+→ Federated Learning
+→ Évaluation multi-véhicules
+→ Analyse des résultats
+```
 
 ---
 
-## 4.5 Apprentissage fédéré
+# 7. Structure du projet
 
-### federated.py
+```text
+PFE/
+├── data/
+│   ├── geolife_raw/
+│   └── processed/
+│
+├── outputs/
+│   ├── results_runs.csv
+│   ├── results_mean.csv
+│   └── results_std.csv
+│
+├── src/
+│   ├── baselines.py
+│   ├── config.py
+│   ├── env_ev.py
+│   ├── evaluate_heuristics.py
+│   ├── evaluate_multi.py
+│   ├── federated.py
+│   ├── geolife_load.py
+│   ├── geolife_prepare.py
+│   ├── metrics.py
+│   ├── models.py
+│   ├── rl_train.py
+│   ├── run_experiment.py
+│   ├── stations.py
+│   ├── utils_geo.py
+│   └── vehicles.py
+│
+├── requirements.txt
+└── README.md
+```
+
+---
+
+# 8. Description des principaux fichiers
+
+## `run_experiment.py`
+
+Fichier principal du projet.
+
+Il orchestre :
+
+- le chargement des données ;
+- l’entraînement ;
+- le Federated Learning ;
+- l’évaluation ;
+- l’export des résultats.
+
+---
+
+## `env_ev.py`
+
+Implémente l’environnement de simulation.
+
+Il gère :
+
+- les déplacements ;
+- le SoC (State of Charge) ;
+- les récompenses RL ;
+- les interactions avec les stations.
+
+---
+
+## `vehicles.py`
+
+Définit le comportement des véhicules :
+
+- batterie ;
+- consommation ;
+- recharge ;
+- déplacement.
+
+---
+
+## `stations.py`
+
+Gère les stations de recharge :
+
+- occupation ;
+- files d’attente ;
+- sessions de recharge ;
+- logique FIFO.
+
+---
+
+## `rl_train.py`
+
+Implémente l’apprentissage par renforcement.
+
+Le projet utilise une version simplifiée de :
+
+- REINFORCE (Policy Gradient).
+
+---
+
+## `models.py`
+
+Définit le réseau de neurones utilisé comme policy.
+
+---
+
+## `federated.py`
 
 Implémente :
 
-* FedAvg : moyenne simple des paramètres locaux
-* FedDyn : ajout d’un terme dynamique pour limiter la dérive locale
-
-Motivation :
-Les trajectoires sont naturellement non-IID.
-Chaque utilisateur a un comportement différent.
+- FedAvg ;
+- FedDyn ;
+- l’agrégation des modèles locaux.
 
 ---
 
-## 4.6 Évaluation
+## `evaluate_multi.py`
 
-### evaluate_multi.py
+Évaluation multi-véhicules avec congestion réelle.
 
-Évaluation des modèles RL :
-
-* Simulation multi-véhicules
-* Stations partagées
-* Congestion réelle
+Les véhicules partagent les mêmes stations.
 
 ---
 
-### evaluate_heuristics.py
+## `evaluate_heuristics.py`
 
-Évaluation des politiques heuristiques dans le même cadre.
-
----
-
-### baselines.py
-
-Contient les règles heuristiques :
-
-* Recharge à la station la plus proche
-* Recharge selon attente + prix
-* Règle seuil SoC
+Évaluation des heuristiques classiques.
 
 ---
 
-### metrics.py
+## `baselines.py`
 
-Agrégation des métriques :
+Contient plusieurs stratégies simples :
 
-* Coût total
-* Attente totale
-* Détour total
-* Temps sous seuil critique
-* Nombre de demandes de recharge
+- station la plus proche ;
+- coût minimal ;
+- règles fixes.
 
 ---
 
-### utils_geo.py
+## `metrics.py`
 
-* Gestion de la grille spatiale
-* Calcul de distance Manhattan
+Calcule les métriques finales :
 
----
-
-# 5. Modélisation du système
-
-## 5.1 Observation
-
-Chaque agent observe :
-
-* SoC
-* Encodage horaire sin/cos
-* Distance aux stations
-* Temps d’attente estimé
-* Prix
-* Occupation actuelle
+- coût ;
+- attente ;
+- détour ;
+- SoC critique ;
+- score d’utilité.
 
 ---
 
-## 5.2 Action
+## `config.py`
 
-L’agent choisit :
+Contient tous les hyperparamètres :
 
-* Une station
-* Ou attendre (ne pas recharger)
-
----
-
-## 5.3 Récompense
-
-Composée de :
-
-* Pénalité de détour
-* Pénalité d’attente
-* Coût énergétique
-* Pénalité si SoC critique
-* Bonus d’efficacité (faible congestion)
+- nombre de clients ;
+- nombre de stations ;
+- learning rate ;
+- paramètres RL ;
+- paramètres FL.
 
 ---
 
-# 6. Évaluation et Résultats
+# 9. Modélisation du problème
 
-Simulation :
+## 9.1 Observation de l’agent
 
-* 20 véhicules simultanés
-* Stations partagées
-* 3 runs indépendants
+Chaque véhicule observe :
 
-Métriques :
+- son niveau de batterie ;
+- l’heure ;
+- la distance aux stations ;
+- le temps d’attente estimé ;
+- le prix de l’électricité ;
+- l’occupation des stations.
 
-| Métrique          | Description               |
-| ----------------- | ------------------------- |
-| cost_mean         | Coût moyen                |
-| wait_mean         | Temps d’attente moyen     |
-| detour_mean       | Détour moyen              |
-| soc_critical_rate | Ratio sous seuil critique |
-| charge_requests   | Nombre de demandes        |
+---
 
-Export :
+## 9.2 Actions possibles
 
-```
+Le véhicule peut :
+
+- choisir une station ;
+- attendre sans recharger.
+
+---
+
+## 9.3 Fonction de récompense
+
+La récompense prend en compte :
+
+- le coût ;
+- l’attente ;
+- le détour ;
+- le risque de batterie critique.
+
+L’objectif est de maximiser l’utilité globale.
+
+---
+
+# 10. Federated Learning
+
+## 10.1 Pourquoi utiliser le FL ?
+
+Les données sont naturellement non-IID :
+
+- chaque utilisateur possède ses propres habitudes ;
+- certains roulent davantage ;
+- certains utilisent des zones différentes.
+
+Le FL permet :
+
+- d’éviter de centraliser les données ;
+- d’améliorer la confidentialité ;
+- d’exploiter l’hétérogénéité des comportements.
+
+---
+
+## 10.2 Méthodes implémentées
+
+### FedAvg
+
+Moyenne simple des poids locaux.
+
+### FedDyn
+
+Ajout d’une régularisation dynamique afin de limiter la dérive des modèles locaux.
+
+---
+
+# 11. Évaluation
+
+L’évaluation finale simule :
+
+- plusieurs véhicules simultanés ;
+- des stations partagées ;
+- des situations de congestion.
+
+---
+
+## 11.1 Métriques utilisées
+
+| Métrique | Description |
+|---|---|
+| `cost_mean` | Coût moyen |
+| `wait_mean` | Temps d’attente moyen |
+| `detour_mean` | Détour moyen |
+| `soc_critical_rate` | Temps passé sous le seuil critique |
+| `charge_requests` | Nombre de recharges |
+| `utility_score` | Score synthétique global |
+
+---
+
+# 12. Résultats générés
+
+Les résultats sont exportés automatiquement dans :
+
+```text
 outputs/
-├── results_runs.csv
-├── results_mean.csv
-├── results_std.csv
 ```
 
----
+Fichiers générés :
 
-# 7. Choix de conception
-
-1. Stations générées selon densité de mobilité
-2. Batterie simulée (pas de données EV réelles)
-3. REINFORCE pour simplicité
-4. 3 seeds pour robustesse statistique
-5. Évaluation multi-véhicules pour reproduire congestion réelle
+| Fichier | Description |
+|---|---|
+| `results_runs.csv` | Résultats détaillés |
+| `results_mean.csv` | Moyennes |
+| `results_std.csv` | Écarts-types |
 
 ---
 
-# 8. Limites
+# 13. Choix techniques réalisés
 
-* Modèle énergétique simplifié
-* Pas de données stations réelles
-* Pas d’intégration réseau électrique
-* RL volontairement simple
+Plusieurs choix ont été faits afin de conserver :
+
+- un projet reproductible ;
+- un temps d’exécution raisonnable ;
+- une architecture simple à comprendre.
+
+Exemples :
+
+- stations synthétiques ;
+- modèle énergétique simplifié ;
+- REINFORCE au lieu d’algorithmes RL plus complexes ;
+- implémentation FL maison sans framework externe.
 
 ---
 
-# 9. Perspectives
+# 14. Limites du projet
 
-* Intégration données EV réelles
-* Stations géographiques réelles
-* Smart Grid
-* Multi-agent RL
-* Personnalisation fédérée
-* Algorithmes plus avancés (PPO, SAC)
+Le projet reste une preuve de concept expérimentale.
+
+Certaines limites existent :
+
+- pas de données EV réelles ;
+- stations simulées ;
+- réseau électrique non modélisé ;
+- modèle RL volontairement simple ;
+- absence de Smart Grid réel.
+
+---
+
+# 15. Perspectives
+
+Améliorations possibles :
+
+- intégration de données EV réelles ;
+- utilisation de PPO ou SAC ;
+- intégration Smart Grid ;
+- réservation de bornes ;
+- multi-agent RL ;
+- personnalisation des modèles fédérés.
+
+---
 
