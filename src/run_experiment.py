@@ -348,16 +348,36 @@ def main():
             device=device,
         )
         all_rows.extend(rows)
-
+        
     df_runs = pd.DataFrame(all_rows)
+
+    # Score synthétique d'analyse uniquement.
+    # Plus le score est faible, meilleur est le compromis global.
+    # Ce score combine les dimensions principales du sujet :
+    # attente, détour, coût et risque de SoC critique.
+    df_runs["utility_score"] = (
+        df_runs["wait_mean"]
+        + 5.0 * df_runs["detour_mean"]
+        + 100.0 * df_runs["soc_critical_rate"]
+        + 10.0 * df_runs["cost_mean"]
+)
+
+    metric_cols = [
+        "cost_mean",
+        "wait_mean",
+        "detour_mean",
+        "soc_critical_rate",
+        "charge_requests",
+        "utility_score",
+    ]
 
     # Sauvegarde tous les runs
     out_runs = "outputs/results_runs.csv"
     df_runs.to_csv(out_runs, index=False)
 
     # Moyenne + écart-type
-    df_mean = df_runs.groupby("method").mean(numeric_only=True).reset_index()
-    df_std = df_runs.groupby("method").std(numeric_only=True).reset_index()
+    df_mean = df_runs.groupby("method")[metric_cols].mean().reset_index()
+    df_std = df_runs.groupby("method")[metric_cols].std().reset_index()
 
     out_mean = "outputs/results_mean.csv"
     out_std = "outputs/results_std.csv"

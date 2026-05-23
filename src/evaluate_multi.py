@@ -19,18 +19,11 @@ def evaluate_multi_vehicle(
     device: str = "cpu",
     seed: int = 0,
 ) -> dict:
-    """
-    Évaluation multi-véhicules (congestion réelle):
-    - stations partagées entre véhicules
-    - chaque véhicule suit la même policy (réseau)
-    - métriques:
-        cost_mean (€/step), wait_mean (min / demande), detour_mean (cases/step), soc_critical_rate
-    """
     rng = np.random.default_rng(seed)
     policy.eval()
     results = []
 
-    wait_action = len(base_stations)  # convention: action == nS => WAIT
+    wait_action = len(base_stations)
 
     for _ in range(n_episodes):
         chosen_users = list(
@@ -64,9 +57,9 @@ def evaluate_multi_vehicle(
                     logits = policy(obs_t)
                     action = int(torch.argmax(logits, dim=1).item())
 
-                _, _, done, info = env.step(action)
+                _, _, done, info = env.step(action, advance_stations=False)
 
-                did_request_charge = (action != wait_action)
+                did_request_charge = action != wait_action
 
                 update_metrics(
                     mets[i],
@@ -78,6 +71,9 @@ def evaluate_multi_vehicle(
                     did_request_charge=did_request_charge,
                 )
                 done_flags[i] = done
+
+            for st in stations:
+                st.step_time(sim_cfg.step_minutes)
 
             if all(done_flags):
                 break

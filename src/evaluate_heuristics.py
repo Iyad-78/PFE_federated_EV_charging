@@ -17,20 +17,6 @@ def evaluate_heuristic_multi_vehicle(
     n_episodes: int = 30,
     seed: int = 0,
 ) -> dict:
-    """
-    Évaluation multi-véhicules (congestion réelle) avec une heuristique.
-
-    policy_func(obs, n_stations) -> action:
-      - 0..n_stations-1: choisir station
-      - n_stations: WAIT
-
-    Retourne des métriques comparables au réseau (policy NN):
-      - cost_mean: €/step
-      - wait_mean: minutes / demande de charge (action != WAIT)
-      - detour_mean: cases/step
-      - soc_critical_rate: ratio de steps sous seuil
-      - charge_requests: nb moyen de demandes de charge
-    """
     rng = np.random.default_rng(seed)
     results = []
 
@@ -39,10 +25,9 @@ def evaluate_heuristic_multi_vehicle(
             rng.choice(user_ids, size=min(n_vehicles, len(user_ids)), replace=False)
         )
 
-        # Stations partagées => congestion réelle
         stations = copy.deepcopy(base_stations)
         n_stations = len(stations)
-        wait_action = n_stations  # convention: WAIT == n_stations
+        wait_action = n_stations
 
         envs = []
         mets = []
@@ -63,18 +48,16 @@ def evaluate_heuristic_multi_vehicle(
                     continue
 
                 obs = env._get_obs()
-
                 action = int(policy_func(obs, n_stations))
 
-                # clamp action to valid range: [0..n_stations] where n_stations == WAIT
                 if action < 0:
                     action = wait_action
                 if action > wait_action:
                     action = wait_action
 
-                _, _, done, info = env.step(action)
+                _, _, done, info = env.step(action, advance_stations=False)
 
-                did_request_charge = (action != wait_action)
+                did_request_charge = action != wait_action
 
                 update_metrics(
                     mets[i],
@@ -86,6 +69,9 @@ def evaluate_heuristic_multi_vehicle(
                     did_request_charge=did_request_charge,
                 )
                 done_flags[i] = done
+
+            for st in stations:
+                st.step_time(sim_cfg.step_minutes)
 
             if all(done_flags):
                 break

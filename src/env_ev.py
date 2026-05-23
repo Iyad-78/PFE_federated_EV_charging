@@ -23,11 +23,6 @@ class StepInfo:
 
 
 class EVGeoLifeEnv:
-    """
-    Env véhicule-centré : 1 agent (user_id) joue sur 1 épisode (traj_id).
-    Episode = DataFrame avec colonnes t, zi, zj, dist_km, dt.
-    """
-
     def __init__(
         self,
         episodes_by_user: Dict[str, List[pd.DataFrame]],
@@ -40,14 +35,15 @@ class EVGeoLifeEnv:
         self.cfg = sim_cfg
         self.rng = random.Random(seed)
 
+        self.user_id: Optional[str] = None
         self.vehicle: Optional[Vehicle] = None
         self.ep: Optional[pd.DataFrame] = None
         self.t = 0
-
-        # station choisie à ce step (peut être None)
         self.current_station: Optional[int] = None
 
     def reset(self, user_id: str) -> np.ndarray:
+        self.user_id = user_id
+
         eps = self.episodes_by_user[user_id]
         if not eps:
             raise RuntimeError("User has no episodes.")
@@ -57,8 +53,8 @@ class EVGeoLifeEnv:
         self.current_station = None
 
         z0 = Zone(int(self.ep.loc[0, "zi"]), int(self.ep.loc[0, "zj"]))
-
         soc0 = self.rng.uniform(self.cfg.soc_init_min, self.cfg.soc_init_max)
+
         self.vehicle = Vehicle(
             veh_id=int(user_id),
             zone=z0,
@@ -69,7 +65,6 @@ class EVGeoLifeEnv:
         return self._get_obs()
 
     def _safe_t(self) -> int:
-        """Clamp current t to valid dataframe row index."""
         assert self.ep is not None
         return max(0, min(int(self.t), len(self.ep) - 1))
 
@@ -77,6 +72,7 @@ class EVGeoLifeEnv:
         assert self.ep is not None
         idx = self._safe_t()
         dt = pd.to_datetime(self.ep.loc[idx, "dt"], errors="coerce")
+
         if pd.isna(dt):
             minutes = idx * self.cfg.step_minutes
         else:
@@ -99,6 +95,7 @@ class EVGeoLifeEnv:
         avg_session = self._estimate_avg_session_minutes()
 
         dists, waits, prices, occs = [], [], [], []
+
         for st in self.stations:
             d = manhattan_distance(self.vehicle.zone, st.zone)
             dists.append(d)
@@ -129,13 +126,22 @@ class EVGeoLifeEnv:
         )
 
     def _is_actually_charging_now(self) -> bool:
-        """True si le véhicule est en charge dans la station courante."""
         if self.current_station is None:
             return False
         st = self.stations[self.current_station]
         return st.is_charging(self.vehicle.veh_id)
 
-    def step(self, action: int) -> Tuple[np.ndarray, float, bool, StepInfo]:
+    def _is_queued_now(self) -> bool:
+        if self.current_station is None:
+            return False
+        st = self.stations[self.current_station]
+        return st.queued_position(self.vehicle.veh_id) != -1
+
+    def step(
+        self,
+        action: int,
+        advance_stations: bool = True,
+    ) -> Tuple[np.ndarray, float, bool, StepInfo]:
         assert self.vehicle is not None
         assert self.ep is not None
 
@@ -147,83 +153,60 @@ class EVGeoLifeEnv:
         detour = 0
         occ = 0
 
-        # =========================
-        # 1) Action du véhicule
-        # =========================
         if action == nS:
-            # WAIT = ne pas (re)demander une borne
-            self.current_station = None
+            if not self._is_actually_charging_now() and not self._is_queued_now():
+                self.current_station = None
         else:
             self.current_station = int(action)
             st = self.stations[self.current_station]
 
-            # déplacement (détour) vers la station
             detour = manhattan_distance(self.vehicle.zone, st.zone)
             self.vehicle.zone = st.zone
 
-            # énergie nécessaire pour atteindre soc_target
             e_need = max(
                 0.0,
                 (self.cfg.soc_target - self.vehicle.soc) * self.cfg.battery_kwh,
             )
 
-            # durée totale demandée (approximée)
             session_min = int(math.ceil((e_need / st.power_kw) * 60))
             session_min = max(5, session_min)
 
             accepted, wait_min = st.plug_or_queue(self.vehicle.veh_id, session_min)
 
-            # coût basé sur l'énergie réellement chargée pendant UN PAS (réaliste)
             if accepted and e_need > 0:
-                e_add = st.power_kw * (self.cfg.step_minutes / 60.0)  # kWh ajoutables ce step
+                e_add = st.power_kw * (self.cfg.step_minutes / 60.0)
                 e_real = min(e_add, e_need)
                 cost = e_real * st.price_kwh
 
-        # =========================
-        # 2) Avancer le temps stations
-        # =========================
-        for st in self.stations:
-            st.step_time(self.cfg.step_minutes)
+        if advance_stations:
+            for st in self.stations:
+                st.step_time(self.cfg.step_minutes)
 
-        # =========================
-        # 3) Charger si réellement en charge
-        # =========================
         if self._is_actually_charging_now():
             st = self.stations[self.current_station]
             self.vehicle.charge_minutes(st.power_kw, self.cfg.step_minutes)
             occ = st.occupation
 
-        # =========================
-        # 4) Avancer le temps de l’épisode
-        # IMPORTANT: si on charge, on NE BOUGE PAS.
-        # =========================
         is_charging_now = self._is_actually_charging_now()
 
         self.t += 1
         if self.t >= len(self.ep):
             done = True
             obs = self._get_obs()
-            r = 0.0
-            return obs, r, done, StepInfo(cost, wait_min, detour, occ)
+            return obs, 0.0, done, StepInfo(cost, wait_min, detour, occ)
 
         if not is_charging_now:
-            # suit la trajectoire seulement si pas en charge
             new_zone = Zone(int(self.ep.loc[self.t, "zi"]), int(self.ep.loc[self.t, "zj"]))
             dist_km = float(self.ep.loc[self.t, "dist_km"])
             self.vehicle.zone = new_zone
             self.vehicle.consume_trip(dist_km)
-        # else: reste à la station, pas de conso, pas de déplacement
 
-        # =========================
-        # 5) Reward (temps / utilité / efficacité)
-        # =========================
         r_time = -0.01 * detour - 0.001 * wait_min
         r_util = -0.05 * cost
 
         if self.vehicle.soc < self.cfg.soc_critical:
             r_util -= 2.0
 
-        # efficacité globale : pénaliser la congestion (signal plus réaliste)
         r_eff = 0.0
         if self.current_station is not None:
             st = self.stations[self.current_station]
@@ -232,7 +215,6 @@ class EVGeoLifeEnv:
 
         r = r_time + r_util + r_eff
 
-        # fin si on dépasse la limite max de steps
         if self.t >= self.cfg.max_steps_per_episode:
             done = True
 
