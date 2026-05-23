@@ -11,9 +11,9 @@ class DataConfig:
     episodes_parquet: str = "data/processed/geolife_episodes.parquet"
 
     # Pour aller vite au début (tu peux augmenter ensuite)
-    max_users: int = 60
-    max_trajectories_per_user: int = 40
-    max_points_total: int = 2_000_000  # sécurité mémoire
+    max_users: int = 180
+    max_trajectories_per_user: int = 80
+    max_points_total: int = 25_000_000  # sécurité mémoire
 
 @dataclass
 class GridConfig:
